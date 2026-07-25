@@ -1,0 +1,83 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+
+def generate_delivery_data(num_samples=1000, seed=42):
+    np.random.seed(seed)
+    distances = np.random.uniform(1.0, 15.0, num_samples)
+    prep_times = np.random.uniform(10, 35, num_samples)
+    traffic = np.random.choice(['Low', 'Medium', 'High', 'Jam'], size=num_samples, p=[0.3, 0.4, 0.2, 0.1])
+    weather = np.random.choice(['Clear', 'Rainy', 'Foggy', 'Stormy'], size=num_samples, p=[0.6, 0.2, 0.1, 0.1])
+    vehicle = np.random.choice(['Motorcycle', 'Bicycle', 'Scooter'], size=num_samples, p=[0.6, 0.2, 0.2])
+    courier_exp = np.random.uniform(0.5, 8.0, num_samples)
+
+    traffic_delay = {'Low': 0, 'Medium': 5, 'High': 12, 'Jam': 22}
+    weather_delay = {'Clear': 0, 'Rainy': 7, 'Foggy': 10, 'Stormy': 18}
+    vehicle_speed = {'Motorcycle': 2.0, 'Scooter': 2.5, 'Bicycle': 4.0}
+
+    t_delay = np.array([traffic_delay[t] for t in traffic])
+    w_delay = np.array([weather_delay[w] for w in weather])
+    v_speed = np.array([vehicle_speed[v] for v in vehicle])
+
+    delivery_time = (
+        prep_times + (distances * v_speed) + t_delay + w_delay - (courier_exp * 0.8) + np.random.normal(0, 3, num_samples)
+    )
+
+    return pd.DataFrame({
+        'Distance_km': np.round(distances, 2),
+        'Prep_Time_min': np.round(prep_times, 1),
+        'Traffic_Level': traffic,
+        'Weather_Condition': weather,
+        'Vehicle_Type': vehicle,
+        'Courier_Exp_yrs': np.round(courier_exp, 1),
+        'Delivery_Time_min': np.round(delivery_time, 1)
+    })
+
+df = generate_delivery_data(num_samples=1500)
+
+X = df.drop(columns=['Delivery_Time_min'])
+y = df['Delivery_Time_min']
+
+num_features = ['Distance_km', 'Prep_Time_min', 'Courier_Exp_yrs']
+cat_features = ['Traffic_Level', 'Weather_Condition', 'Vehicle_Type']
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), num_features),
+        ('cat', OneHotEncoder(drop='first', sparse_output=False), cat_features)
+    ]
+)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model_pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', RandomForestRegressor(n_estimators=100, random_state=42))
+])
+
+model_pipeline.fit(X_train, y_train)
+
+y_pred = model_pipeline.predict(X_test)
+
+mae = mean_absolute_error(y_test, y_pred)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+r2 = r2_score(y_test, y_pred)
+
+print(f"MAE: {mae:.2f} min | RMSE: {rmse:.2f} min | R² Score: {r2:.4f}")
+
+new_order = pd.DataFrame([{
+    'Distance_km': 6.5,
+    'Prep_Time_min': 20.0,
+    'Traffic_Level': 'High',
+    'Weather_Condition': 'Rainy',
+    'Vehicle_Type': 'Motorcycle',
+    'Courier_Exp_yrs': 3.5
+}])
+
+predicted_time = model_pipeline.predict(new_order)[0]
+print(f"Predicted Delivery Time: {predicted_time:.1f} minutes")
